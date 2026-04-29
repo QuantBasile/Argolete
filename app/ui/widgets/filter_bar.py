@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -39,29 +41,40 @@ class FilterBar(QWidget):
         self.underlying_edit = QLineEdit()
         self.underlying_edit.setPlaceholderText("Underlying filter")
 
+        self.pairs_only = QCheckBox("Pairs only in table")
+
         self.apply_button = QPushButton("Apply Filters")
         self.reset_button = QPushButton("Reset Filters")
         self.pending_label = QLabel("")
+        self.summary_label = QLabel("Rows: - | Active filters: none")
+        self.summary_label.setObjectName("FilterSummary")
 
-        layout = QHBoxLayout(self)
-        layout.addWidget(QLabel("Action"))
-        layout.addWidget(self.action_combo)
-        layout.addWidget(QLabel("Category"))
-        layout.addWidget(self.category_combo)
-        layout.addWidget(QLabel("Side"))
-        layout.addWidget(self.side_combo)
-        layout.addWidget(self.wkn_edit)
-        layout.addWidget(self.underlying_edit)
-        layout.addWidget(self.apply_button)
-        layout.addWidget(self.reset_button)
-        layout.addWidget(self.pending_label)
-        layout.addStretch(1)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Action"))
+        row.addWidget(self.action_combo)
+        row.addWidget(QLabel("Category"))
+        row.addWidget(self.category_combo)
+        row.addWidget(QLabel("Side"))
+        row.addWidget(self.side_combo)
+        row.addWidget(self.wkn_edit)
+        row.addWidget(self.underlying_edit)
+        row.addWidget(self.pairs_only)
+        row.addWidget(self.apply_button)
+        row.addWidget(self.reset_button)
+        row.addWidget(self.pending_label)
+        row.addStretch(1)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(row)
+        layout.addWidget(self.summary_label)
 
         self.action_combo.changed.connect(self.filters_edited.emit)
         self.category_combo.changed.connect(self.filters_edited.emit)
         self.side_combo.changed.connect(self.filters_edited.emit)
         self.wkn_edit.textChanged.connect(self.filters_edited.emit)
         self.underlying_edit.textChanged.connect(self.filters_edited.emit)
+        self.pairs_only.stateChanged.connect(self.filters_edited.emit)
         self.apply_button.clicked.connect(self.apply_clicked.emit)
         self.reset_button.clicked.connect(self.reset_clicked.emit)
 
@@ -71,3 +84,6 @@ class FilterBar(QWidget):
 
     def set_pending_text(self, text: str) -> None:
         self.pending_label.setText(text)
+
+    def set_summary(self, text: str) -> None:
+        self.summary_label.setText(text)

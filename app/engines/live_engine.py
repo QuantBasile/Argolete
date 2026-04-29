@@ -1,49 +1,114 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pandas as pd
 
+from app.core.state import SanityCounters
 
-def merge_new_rows(existing: pd.DataFrame, new_rows: pd.DataFrame) -> pd.DataFrame:
-    """Append and deduplicate by Id."""
+
+def merge_new_rows(existing: pd.DataFrame, new_rows: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Append and deduplicate by Id. Returns dataframe and number of dropped duplicates."""
     if existing is None or existing.empty:
-        return new_rows.copy().sort_values(["Time", "Id"]).reset_index(drop=True)
-    if new_rows is None or new_rows.empty:
-        return existing.copy()
+        out = new_rows.copy().sort_values(["Time", "Id"], na_position="last").reset_index(drop=True)
+        return out, 0
 
+    if new_rows is None or new_rows.empty:
+        return existing.copy(), 0
+
+    before = len(existing) + len(new_rows)
     out = pd.concat([existing, new_rows], ignore_index=True)
     out = out.drop_duplicates(subset=["Id"], keep="last")
-    out = out.sort_values(["Time", "Id"]).reset_index(drop=True)
-    return out
+    dropped = before - len(out)
+    out = out.sort_values(["Time", "Id"], na_position="last").reset_index(drop=True)
+    return out, int(dropped)
 
 
-def compute_kpis(filtered_df: pd.DataFrame, baseline_summary: dict) -> dict:
-    """Compute minimal live KPIs."""
+def compute_kpis(filtered_df: pd.DataFrame, baseline_summary: dict, total_rows: int = 0) -> dict:
     if filtered_df is None or filtered_df.empty:
         return {
             "rows": 0,
+            "total_rows": total_rows,
             "trades": 0,
             "quotes": 0,
             "quantity": 0,
-            "vs_rows": 0,
-            "vs_quantity": 0,
+            "trade_volume": 0.0,
+            "buy_sell_ratio": 0.0,
+            "trade_quote_ratio": 0.0,
+            "vs_rows": 0.0,
+            "vs_trades": 0.0,
+            "vs_quotes": 0.0,
+            "vs_quantity": 0.0,
+            "vs_trade_volume": 0.0,
+            "vs_buy_sell_ratio": 0.0,
+            "vs_trade_quote_ratio": 0.0,
         }
 
     rows = int(len(filtered_df))
     trades = int(filtered_df["IsTrade"].sum())
     quotes = int(filtered_df["IsQuote"].sum())
     quantity = int(filtered_df["Quantity"].sum())
+    trade_volume = float(filtered_df["TradeValue"].sum())
 
-    base_rows = baseline_summary.get("avg_daily_rows", 0) or 0
-    base_qty = baseline_summary.get("avg_daily_quantity", 0) or 0
+    trade_mask = filtered_df["IsTrade"]
+    buy_notional = float(filtered_df.loc[trade_mask & filtered_df["Side"].astype(str).eq("Buy"), "TradeValue"].sum())
+    sell_notional = float(filtered_df.loc[trade_mask & filtered_df["Side"].astype(str).eq("Sell"), "TradeValue"].sum())
+    buy_sell_ratio = buy_notional / sell_notional if sell_notional else 0.0
+    trade_quote_ratio = trades / quotes if quotes else 0.0
 
-    vs_rows = ((rows / base_rows - 1.0) * 100.0) if base_rows else 0.0
-    vs_qty = ((quantity / base_qty - 1.0) * 100.0) if base_qty else 0.0
+    def pct(current: float, base: float) -> float:
+        return ((current / base - 1.0) * 100.0) if base else 0.0
 
     return {
         "rows": rows,
+        "total_rows": total_rows,
         "trades": trades,
         "quotes": quotes,
         "quantity": quantity,
-        "vs_rows": vs_rows,
-        "vs_quantity": vs_qty,
+        "trade_volume": trade_volume,
+        "buy_sell_ratio": buy_sell_ratio,
+        "trade_quote_ratio": trade_quote_ratio,
+        "vs_rows": pct(rows, baseline_summary.get("avg_daily_rows", 0) or 0),
+        "vs_trades": pct(trades, baseline_summary.get("avg_daily_trade_rows", 0) or 0),
+        "vs_quotes": pct(quotes, baseline_summary.get("avg_daily_quote_rows", 0) or 0),
+        "vs_quantity": pct(quantity, baseline_summary.get("avg_daily_quantity", 0) or 0),
+        "vs_trade_volume": pct(trade_volume, baseline_summary.get("avg_daily_trade_volume", 0.0) or 0.0),
+        "vs_buy_sell_ratio": pct(buy_sell_ratio, baseline_summary.get("avg_daily_buy_sell_ratio", 0.0) or 0.0),
+        "vs_trade_quote_ratio": pct(trade_quote_ratio, baseline_summary.get("avg_daily_trade_quote_ratio", 0.0) or 0.0),
     }
+
+
+def compute_rolling_kpis(df: pd.DataFrame, now: datetime) -> dict:
+    """Fast last-1m/5m window metrics."""
+    out = {
+        "trades_1m": 0, "trades_5m": 0,
+        "quotes_1m": 0, "quotes_5m": 0,
+        "volume_1m": 0.0, "volume_5m": 0.0,
+    }
+    if df is None or df.empty or "Time" not in df:
+        return out
+
+    ts = pd.to_datetime(df["Time"], errors="coerce")
+    for minutes in (1, 5):
+        mask = ts >= (now - timedelta(minutes=minutes))
+        sub = df.loc[mask]
+        out[f"trades_{minutes}m"] = int(sub["IsTrade"].sum())
+        out[f"quotes_{minutes}m"] = int(sub["IsQuote"].sum())
+        out[f"volume_{minutes}m"] = float(sub["TradeValue"].sum())
+    return out
+
+
+def compute_sanity_counters(df: pd.DataFrame, duplicate_ids_dropped: int = 0) -> SanityCounters:
+    if df is None or df.empty:
+        return SanityCounters(duplicate_ids_dropped=duplicate_ids_dropped)
+
+    invalid_trade_price = int((df["IsTrade"] & (df["TradePrice"].isna() | (df["TradePrice"] <= 0))).sum())
+
+    return SanityCounters(
+        duplicate_ids_dropped=duplicate_ids_dropped,
+        missing_id=int(df["Id"].isna().sum() + (df["Id"].astype(str).str.strip() == "").sum()),
+        missing_time=int(df["Time"].isna().sum()),
+        missing_wkn=int(df["Wkn"].isna().sum() + (df["Wkn"].astype(str).str.strip() == "").sum()),
+        invalid_trade_price=invalid_trade_price,
+        zero_quantity=int((df["Quantity"] == 0).sum()),
+    )
