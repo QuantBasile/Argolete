@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from typing import Sequence
 
 import pandas as pd
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -38,7 +37,7 @@ class PnlCurveWidget(QWidget):
         painter.setPen(QColor("#17324d"))
         painter.drawText(card.adjusted(16, 8, -16, -8), Qt.AlignTop | Qt.AlignLeft, "Pair PnL 1m — filtered")
 
-        plot = QRectF(card.left() + 52, card.top() + 38, card.width() - 76, card.height() - 60)
+        plot = QRectF(card.left() + 52, card.top() + 38, card.width() - 76, card.height() - 66)
         self._draw_grid(painter, plot)
 
         if self._df.empty or len(self._df) < 2:
@@ -68,6 +67,34 @@ class PnlCurveWidget(QWidget):
         painter.setPen(QColor("#7b2cbf"))
         painter.drawText(QRectF(8, plot.top() - 8, 42, 20), Qt.AlignRight, self._fmt(max_abs))
         painter.drawText(QRectF(8, plot.bottom() - 10, 42, 20), Qt.AlignRight, self._fmt(-max_abs))
+
+        self._draw_time_ticks(painter, plot)
+
+    def _draw_time_ticks(self, painter: QPainter, plot: QRectF) -> None:
+        if "Time" not in self._df.columns:
+            return
+        ts = pd.to_datetime(self._df["Time"], errors="coerce")
+        if ts.dropna().empty:
+            return
+
+        minutes = ts.dt.hour * 60 + ts.dt.minute
+        min_m = int(minutes.min())
+        max_m = int(minutes.max())
+        if max_m <= min_m:
+            return
+
+        first_hour = ((min_m + 59) // 60) * 60
+        ticks = list(range(first_hour, max_m + 1, 60))
+        if not ticks:
+            ticks = [min_m, max_m]
+
+        small = QFont(); small.setPointSize(8)
+        painter.setFont(small)
+        painter.setPen(QColor("#6f7f90"))
+        for m in ticks:
+            x = plot.left() + (m - min_m) / max(max_m - min_m, 1) * plot.width()
+            painter.drawLine(QPointF(x, plot.bottom()), QPointF(x, plot.bottom() + 4))
+            painter.drawText(QRectF(x - 22, plot.bottom() + 6, 44, 16), Qt.AlignCenter, f"{m // 60:02d}:00")
 
     def _draw_grid(self, painter: QPainter, plot: QRectF) -> None:
         painter.setPen(QPen(QColor("#e6eef7"), 1))

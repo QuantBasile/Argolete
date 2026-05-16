@@ -9,22 +9,29 @@ import pandas as pd
 
 from app.core.state import CursorState
 from app.data.feed_interface import FeedInterface
-from app.utils.constants import START_HOUR
+from app.utils.constants import FINAL_SCHEMA_COLUMNS, START_HOUR
 
 
 class FakeFeed(FeedInterface):
-    """Fake event source simulating history, startup load, and live polling."""
+    """Fake event source simulating production-like trading logs."""
 
-    ACTIONS = ["TradeOK", "QuoteOK", "TradeError", "QuoteError", "SoldOut"]
+    ACTIONS = ["Info", "QuoteError", "QuoteOK", "QuoteRouting", "TradeError", "TradeOK", "TradeRouting"]
+    DETAILED_ACTIONS = [
+        "AutoDecline", "Cancel", "ClientTimeout", "InstrumentExpired",
+        "InstrumentNotActive", "InstrumentSuspended", "NoValidPrice",
+        "OK_Auto", "OK_Manual", "SoldOut", "TraderTimeout",
+    ]
     SIDES = ["Buy", "Sell", "Unknown"]
-    CATEGORIES = ["OpenEnd", "Mini", "Inline", "Vanilla", "Sprint"]
+    CATEGORIES = ["OpenEnd", "TurboOs", "StockOs", "RevCon", "MiniCert", "IndexOs", "DiscOs", "Other"]
     OPTION_TYPES = ["C", "P"]
     UNDERLYINGS = ["Nasdaq", "DAX", "SPX", "EuroStoxx", "Nikkei", "Gold", "Tesla", "Nvidia"]
     COUNTERPARTIES = ["BNP", "SG", "CITI", "JPM", "MS", "UBS", "Retail", "FlowDesk"]
+    INTERFACES = ["LSX", "TR", "RFQ", "OMS", "API"]
+    TRADERS = ["T01", "T02", "T03", "T04", "AUTO"]
 
     def __init__(self, seed: int = 42) -> None:
         self.random = random.Random(seed)
-        self.now = self._aligned_now()
+        self.now = datetime.now().replace(microsecond=0)
         self.master_today = self._generate_day(
             start=self.now.replace(hour=START_HOUR, minute=0, second=0, microsecond=0),
             end=self.now,
@@ -33,57 +40,83 @@ class FakeFeed(FeedInterface):
         )
         self.future_cursor = self.now
 
-    def _aligned_now(self) -> datetime:
-        now = datetime.now().replace(microsecond=0)
-        return now
-
     def _random_id(self) -> str:
-        chars = string.ascii_uppercase + string.digits
-        return "".join(self.random.choices(chars, k=10))
+        return "".join(self.random.choices(string.ascii_uppercase + string.digits, k=10))
 
     def _random_wkn(self) -> str:
-        chars = string.ascii_uppercase + string.digits
-        return "".join(self.random.choices(chars, k=6))
+        return "".join(self.random.choices(string.ascii_uppercase + string.digits, k=6))
+
+    def _random_isin(self) -> str:
+        return "DE" + "".join(self.random.choices(string.ascii_uppercase + string.digits, k=10))
+
+    def _random_expiry(self) -> str:
+        if self.random.random() < 0.45:
+            return "OpenEnd"
+        days = self.random.choice([3, 7, 14, 30, 90, 180, 365])
+        return (datetime.now().date() + timedelta(days=days)).isoformat()
 
     def _build_row(self, ts: datetime) -> dict:
         action = self.random.choices(
             self.ACTIONS,
-            weights=[50, 35, 4, 6, 5],
+            weights=[4, 4, 32, 8, 3, 44, 5],
             k=1,
         )[0]
-        qty = self.random.randint(10, 5000) if "Trade" in action else self.random.randint(1, 1000)
-        trade_price = round(self.random.uniform(0.05, 15.0), 4) if "TradeOK" in action else None
-        info = "" if action in {"TradeOK", "QuoteOK"} else action
+
+        if action == "TradeOK":
+            detailed = self.random.choices(["OK_Auto", "OK_Manual"], weights=[85, 15], k=1)[0]
+        elif action == "QuoteOK":
+            detailed = self.random.choices(["OK_Auto", "OK_Manual", "TraderTimeout"], weights=[92, 5, 3], k=1)[0]
+        elif action in {"QuoteError", "TradeError"}:
+            detailed = self.random.choice(["NoValidPrice", "TraderTimeout", "ClientTimeout", "AutoDecline"])
+        elif action == "Info":
+            detailed = self.random.choice(["InstrumentSuspended", "InstrumentExpired", "InstrumentNotActive"])
+        else:
+            detailed = self.random.choice(self.DETAILED_ACTIONS)
+
+        qty = self.random.randint(10, 5000) if action == "TradeOK" else self.random.randint(0, 1000)
+        price = round(self.random.uniform(0.05, 15.0), 4) if action == "TradeOK" else None
+        ref1 = round(self.random.uniform(50, 18000), 4)
+        underlying = self.random.choice(self.UNDERLYINGS) if self.random.random() > 0.005 else ""
 
         return {
             "Id": self._random_id(),
-            "Time": ts,
-            "Wkn": self._random_wkn(),
-            "Underlying": self.random.choice(self.UNDERLYINGS),
             "OptionType": self.random.choice(self.OPTION_TYPES),
+            "Time": ts,
+            "Interface": self.random.choice(self.INTERFACES),
+            "Wkn": self._random_wkn() if self.random.random() > 0.005 else None,
+            "Underlying": underlying,
+            "UnderlyingIsin": self._random_isin(),
+            "UnderlyingNode": f"/{underlying}/node/{self.random.randint(1, 20)}" if underlying else "",
+            "Strike": round(self.random.uniform(10, 20000), 4),
+            "Expiry": self._random_expiry(),
             "Action": action,
+            "DetailedAction": detailed,
             "Counterparty": self.random.choice(self.COUNTERPARTIES),
             "Side": self.random.choice(self.SIDES),
-            "TradePrice": trade_price,
+            "TradePrice": price,
             "Quantity": qty,
             "ContractSize": round(self.random.choice([0.01, 0.1, 1.0]), 2),
+            "Ref1": ref1,
+            "Trader": self.random.choice(self.TRADERS),
+            "Agio": round(self.random.uniform(-0.05, 0.25), 4) if action == "TradeOK" else None,
             "Category": self.random.choice(self.CATEGORIES),
-            "Information": info,
+            "EquityDeltaEq": round(self.random.uniform(-5000, 5000), 2) if action == "TradeOK" else 0.0,
+            "IsNextEventIn3Days": self.random.random() < 0.08,
+            "Information": "" if action in {"TradeOK", "QuoteOK"} else detailed,
         }
+
+    def _empty_df(self) -> pd.DataFrame:
+        return pd.DataFrame(columns=[*FINAL_SCHEMA_COLUMNS, "Information"])
 
     def _generate_day(self, start: datetime, end: datetime, min_rows: int, max_rows: int) -> pd.DataFrame:
         if end <= start:
-            return pd.DataFrame(columns=[
-                "Id", "Time", "Wkn", "Underlying", "OptionType", "Action", "Counterparty",
-                "Side", "TradePrice", "Quantity", "ContractSize", "Category", "Information"
-            ])
+            return self._empty_df()
 
         total_seconds = max(int((end - start).total_seconds()), 1)
         n = self.random.randint(min_rows, max_rows)
         seconds = sorted(self.random.randint(0, total_seconds) for _ in range(n))
         rows = [self._build_row(start + timedelta(seconds=s)) for s in seconds]
-        df = pd.DataFrame(rows).sort_values(["Time", "Id"]).reset_index(drop=True)
-        return df
+        return pd.DataFrame(rows).sort_values(["Time", "Id"]).reset_index(drop=True)
 
     def load_history(self, start: datetime, end: datetime) -> pd.DataFrame:
         days = pd.date_range(start=start.date(), end=end.date(), freq="D")
@@ -93,7 +126,7 @@ class FakeFeed(FeedInterface):
             d1 = d0.replace(hour=22, minute=0)
             parts.append(self._generate_day(d0, d1, 700, 1400))
         if not parts:
-            return pd.DataFrame()
+            return self._empty_df()
         return pd.concat(parts, ignore_index=True)
 
     def load_today(self, start: datetime, end: datetime) -> pd.DataFrame:

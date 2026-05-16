@@ -45,7 +45,7 @@ class DualAxisCurveWidget(QWidget):
         painter.setPen(QColor("#17324d"))
         painter.drawText(card.adjusted(16, 10, -16, -10), Qt.AlignTop | Qt.AlignLeft, self._title)
 
-        plot = QRectF(card.left() + 58, card.top() + 48, card.width() - 116, card.height() - 86)
+        plot = QRectF(card.left() + 58, card.top() + 48, card.width() - 116, card.height() - 92)
         self._draw_grid(painter, plot)
 
         if self._df.empty or len(self._df) < 2:
@@ -79,6 +79,7 @@ class DualAxisCurveWidget(QWidget):
         self._draw_series(painter, xs, tr_live.tolist(), max_tr, plot, QColor("#ff7f0e"), dashed=False, fill=False)
 
         self._draw_axes_labels(painter, plot, max_vol, max_tr)
+        self._draw_time_ticks(painter, plot, df)
         self._draw_legend(painter, card, has_hist=has_hist)
 
     def _draw_grid(self, painter: QPainter, plot: QRectF) -> None:
@@ -125,6 +126,35 @@ class DualAxisCurveWidget(QWidget):
         painter.setPen(pen)
         painter.drawPath(path)
 
+    def _draw_time_ticks(self, painter: QPainter, plot: QRectF, df: pd.DataFrame) -> None:
+        if "BucketMin" not in df.columns or df["BucketMin"].dropna().empty:
+            return
+
+        bucket = pd.to_numeric(df["BucketMin"], errors="coerce")
+        if bucket.dropna().empty:
+            return
+
+        min_m = int(bucket.min())
+        max_m = int(bucket.max())
+        if max_m <= min_m:
+            return
+
+        first_hour = ((min_m + 59) // 60) * 60
+        ticks = list(range(first_hour, max_m + 1, 60))
+        if not ticks:
+            ticks = [min_m, max_m]
+
+        small = QFont()
+        small.setPointSize(8)
+        painter.setFont(small)
+        painter.setPen(QColor("#6f7f90"))
+
+        for m in ticks:
+            x = plot.left() + (m - min_m) / max(max_m - min_m, 1) * plot.width()
+            painter.drawLine(QPointF(x, plot.bottom()), QPointF(x, plot.bottom() + 4))
+            label = f"{m // 60:02d}:00"
+            painter.drawText(QRectF(x - 22, plot.bottom() + 6, 44, 16), Qt.AlignCenter, label)
+
     def _draw_axes_labels(self, painter: QPainter, plot: QRectF, max_vol: float, max_trades: float) -> None:
         small = QFont(); small.setPointSize(8)
         painter.setFont(small)
@@ -136,9 +166,6 @@ class DualAxisCurveWidget(QWidget):
         painter.setPen(QColor("#ff7f0e"))
         painter.drawText(QRectF(plot.right() + 8, plot.top() - 8, 48, 20), Qt.AlignLeft, self._fmt_num(max_trades))
         painter.drawText(QRectF(plot.right() + 8, plot.bottom() - 10, 48, 20), Qt.AlignLeft, "0")
-
-        painter.setPen(QColor("#6f7f90"))
-        painter.drawText(QRectF(plot.left(), plot.bottom() + 8, plot.width(), 18), Qt.AlignCenter, "time")
 
     def _draw_legend(self, painter: QPainter, card, has_hist: bool) -> None:
         if has_hist:

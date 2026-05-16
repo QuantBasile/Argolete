@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QMainWindow, QTabWidget
 
 from app.ui.tabs.analysis_tab_stub import AnalysisTabStub
 from app.ui.tabs.debug_profiling_tab import DebugProfilingTab
+from app.ui.tabs.ko_argus_tab import KOArgusTab
 from app.ui.tabs.live_overview_tab import LiveOverviewTab
 from app.utils.constants import APP_TITLE, PLACEHOLDER_TABS
 
@@ -148,23 +149,47 @@ QHeaderView::section {
     font-weight: 900;
 }
 
+#HealthOk {
+    color: #075e38;
+    background: #dff9ec;
+    border: 1px solid #8ce0b8;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-weight: 900;
+}
+
+#HealthWarn {
+    color: #7a4b00;
+    background: #fff2cc;
+    border: 1px solid #e0bd62;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-weight: 900;
+}
+
+#HealthPanic {
+    color: #8a1c1c;
+    background: #ffe3e3;
+    border: 1px solid #ff8787;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-weight: 900;
+}
+
+#HealthNeutral {
+    color: #364b63;
+    background: #edf2f7;
+    border: 1px solid #cbd5e0;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-weight: 900;
+}
+
 #FilterSummary {
     color: #38536b;
     font-size: 11px;
     font-weight: 700;
     padding-left: 4px;
-}
-
-#StatKey {
-    color: #58718a;
-    font-size: 11px;
-    font-weight: 800;
-}
-
-#StatValue {
-    color: #102a43;
-    font-size: 12px;
-    font-weight: 900;
 }
 
 QTextEdit {
@@ -184,18 +209,23 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
+        self.setWindowFlags(Qt.Window | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
+        self.setMinimumSize(1100, 700)
         self.resize(1800, 1000)
         self.setStyleSheet(APP_STYLE)
 
         self.tabs = QTabWidget()
         self.live_tab = LiveOverviewTab()
         self.debug_tab = DebugProfilingTab()
+        self.ko_tab = KOArgusTab()
 
         self.tabs.addTab(self.live_tab, "Live Overview")
 
         for title in PLACEHOLDER_TABS:
             if title == "Debug / Profiling":
                 self.tabs.addTab(self.debug_tab, title)
+            elif title == "KO / Product Events":
+                self.tabs.addTab(self.ko_tab, title)
             else:
                 self.tabs.addTab(AnalysisTabStub(title), title)
 

@@ -4,6 +4,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -17,9 +18,12 @@ from app.ui.widgets.dashboard_table import DashboardTable
 from app.ui.widgets.detail_panel import DetailPanel
 from app.ui.widgets.dual_axis_curve import DualAxisCurveWidget
 from app.ui.widgets.filter_bar import FilterBar
+from app.ui.widgets.health_bar import HealthBar
+from app.ui.widgets.horizontal_bar_chart import HorizontalBarChart
 from app.ui.widgets.kpi_card import KpiCard
 from app.ui.widgets.live_table import LiveTableView
 from app.ui.widgets.pnl_curve import PnlCurveWidget
+from app.ui.widgets.timeout_curve import TimeoutCurveWidget
 
 
 class LiveOverviewTab(QWidget):
@@ -28,6 +32,7 @@ class LiveOverviewTab(QWidget):
     filters_edited = Signal()
     apply_filters_clicked = Signal()
     reset_filters_clicked = Signal()
+    filter_preset_selected = Signal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -40,6 +45,7 @@ class LiveOverviewTab(QWidget):
         self.run_button = QPushButton("Freeze")
         self.mode_label = QLabel("RUNNING LIVE")
         self.mode_label.setObjectName("ModeLive")
+        self.health_bar = HealthBar()
 
         self.interval_combo = QComboBox()
         self.interval_combo.addItems(["5 s", "10 s", "20 s", "60 s"])
@@ -63,6 +69,7 @@ class LiveOverviewTab(QWidget):
         self.pair_pnl_curve = PnlCurveWidget()
         self.filtered_flow_curve = DualAxisCurveWidget("Filtered Trade Flow")
         self.flow_curve = DualAxisCurveWidget("Unfiltered Trade Flow vs Historic")
+        self.timeout_curve = TimeoutCurveWidget()
 
         trade_headers = {
             "Underlying": "Underlying",
@@ -74,11 +81,16 @@ class LiveOverviewTab(QWidget):
         self.tbl_underlying = DashboardTable("Top Underlyings — volume ∪ trades", ["Underlying", "TradedVolume", "Trades"], trade_headers)
         self.tbl_wkn = DashboardTable("Top WKNs — volume ∪ trades", ["Wkn", "TradedVolume", "Trades"], trade_headers)
         self.tbl_counterparty = DashboardTable("Top Counterparties — volume ∪ trades", ["Counterparty", "TradedVolume", "Trades"], trade_headers)
-        self.tbl_quoted_wkn = DashboardTable("Most Quoted WKNs — QuoteOK", ["Wkn", "Quotes"], {"Wkn": "WKN", "Quotes": "# Quotes"})
         self.tbl_new_wkn = DashboardTable("Newly Active WKNs — last 5m", ["Wkn", "Underlying", "TradedVolume", "Trades"], trade_headers)
         self.tbl_conversion = DashboardTable("Trade/Quote Conversion — Underlying", ["Underlying", "Trades", "Quotes", "TradeQuoteRatio"], {"Underlying": "Underlying", "Trades": "# Trades", "Quotes": "# Quotes", "TradeQuoteRatio": "T/Q"})
         self.tbl_errors = DashboardTable("Abnormal Actions — last 5m", ["Metric", "Count"], {"Metric": "Metric", "Count": "Count"})
         self.tbl_priority = DashboardTable("Priority Alerts", ["Time", "Wkn", "Underlying", "Reason"], {"Time": "Time", "Wkn": "WKN", "Underlying": "Underlying", "Reason": "Reason"})
+        self.tbl_next_event = DashboardTable("Next Event < 3d Monitor", ["Underlying", "WknCount", "Trades", "TradedVolume", "NetDeltaEq"], {"Underlying": "Underlying", "WknCount": "# WKN", "Trades": "# Trades", "TradedVolume": "Volume", "NetDeltaEq": "Net Delta"})
+
+        self.chart_timeout_category = HorizontalBarChart("TraderTimeout by Category", "Category", "TraderTimeoutCount", max_bars=8)
+        self.chart_quoted_wkn = HorizontalBarChart("Most Quoted WKNs — QuoteOK", "Wkn", "Quotes", max_bars=10)
+        self.chart_agio_top = HorizontalBarChart("Top 10 Cum Agio", "Underlying", "CumAgio", max_bars=10, value_decimals=4)
+        self.chart_agio_floor = HorizontalBarChart("Floor 10 Cum Agio", "Underlying", "CumAgio", max_bars=10, value_decimals=4)
 
         top_bar = QHBoxLayout()
         top_bar.addWidget(self.left_title)
@@ -90,6 +102,8 @@ class LiveOverviewTab(QWidget):
         top_bar.addWidget(self.interval_combo)
         top_bar.addSpacing(16)
         top_bar.addWidget(self.status_label)
+        top_bar.addSpacing(12)
+        top_bar.addWidget(self.health_bar)
         top_bar.addStretch(1)
 
         kpi_grid = QGridLayout()
@@ -103,7 +117,6 @@ class LiveOverviewTab(QWidget):
         kpi_grid.addWidget(self.kpi_trade_quote_ratio, 1, 2)
         kpi_grid.addWidget(self.kpi_pair_1, 1, 3)
 
-        # Left side: filtered plots in the same row.
         plot_splitter = QSplitter()
         plot_splitter.addWidget(self.pair_pnl_curve)
         plot_splitter.addWidget(self.filtered_flow_curve)
@@ -128,22 +141,36 @@ class LiveOverviewTab(QWidget):
         right_layout.setContentsMargins(8, 0, 0, 0)
         right_layout.setSpacing(10)
         right_layout.addWidget(self.right_title)
-
-        # Right side: unfiltered chart stays here, above the compact table grid.
         right_layout.addWidget(self.flow_curve)
 
-        table_grid = QGridLayout()
-        table_grid.setSpacing(10)
-        table_grid.addWidget(self.tbl_priority, 0, 0)
-        table_grid.addWidget(self.tbl_new_wkn, 0, 1)
-        table_grid.addWidget(self.tbl_errors, 1, 0)
-        table_grid.addWidget(self.tbl_conversion, 1, 1)
-        table_grid.addWidget(self.tbl_underlying, 2, 0)
-        table_grid.addWidget(self.tbl_wkn, 2, 1)
-        table_grid.addWidget(self.tbl_counterparty, 3, 0)
-        table_grid.addWidget(self.tbl_quoted_wkn, 3, 1)
+        ops_group = QGroupBox("Operational Alerts")
+        ops_grid = QGridLayout(ops_group)
+        ops_grid.setSpacing(10)
+        ops_grid.addWidget(self.timeout_curve, 0, 0)
+        ops_grid.addWidget(self.chart_timeout_category, 0, 1)
+        ops_grid.addWidget(self.tbl_priority, 1, 0)
+        ops_grid.addWidget(self.tbl_errors, 1, 1)
 
-        right_layout.addLayout(table_grid)
+        flow_group = QGroupBox("Flow / Conversion")
+        flow_grid = QGridLayout(flow_group)
+        flow_grid.setSpacing(10)
+        flow_grid.addWidget(self.tbl_new_wkn, 0, 0)
+        flow_grid.addWidget(self.tbl_conversion, 0, 1)
+        flow_grid.addWidget(self.tbl_next_event, 1, 0)
+        flow_grid.addWidget(self.chart_agio_top, 1, 1)
+        flow_grid.addWidget(self.chart_agio_floor, 2, 1)
+
+        leaders_group = QGroupBox("Leaderboards")
+        leaders_grid = QGridLayout(leaders_group)
+        leaders_grid.setSpacing(10)
+        leaders_grid.addWidget(self.tbl_underlying, 0, 0)
+        leaders_grid.addWidget(self.tbl_wkn, 0, 1)
+        leaders_grid.addWidget(self.tbl_counterparty, 1, 0)
+        leaders_grid.addWidget(self.chart_quoted_wkn, 1, 1)
+
+        right_layout.addWidget(ops_group)
+        right_layout.addWidget(flow_group)
+        right_layout.addWidget(leaders_group)
         right_layout.addStretch(1)
 
         right_scroll = QScrollArea()
@@ -163,6 +190,7 @@ class LiveOverviewTab(QWidget):
         self.filter_bar.filters_edited.connect(self.filters_edited.emit)
         self.filter_bar.apply_clicked.connect(self.apply_filters_clicked.emit)
         self.filter_bar.reset_clicked.connect(self.reset_filters_clicked.emit)
+        self.filter_bar.preset_selected.connect(self.filter_preset_selected.emit)
         self.live_table.row_selected.connect(self.detail_panel.set_row)
 
     def _on_run_button(self) -> None:

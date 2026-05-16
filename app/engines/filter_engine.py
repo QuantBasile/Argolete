@@ -20,19 +20,20 @@ def apply_live_filters(df: pd.DataFrame, filters: Filters) -> pd.DataFrame:
     if filters.side:
         mask &= df["Side"].astype(str).isin(filters.side)
 
+    if filters.trader:
+        mask &= df["Trader"].astype(str).isin(filters.trader)
+
+    if filters.interface:
+        mask &= df["Interface"].astype(str).isin(filters.interface)
+
+    if filters.next_event_only:
+        mask &= df["IsNextEventIn3Days"].fillna(False)
+
     if filters.wkn_text.strip():
-        mask &= df["WknLower"].str.contains(
-            filters.wkn_text.strip().lower(),
-            na=False,
-            regex=False,
-        )
+        mask &= df["WknLower"].str.contains(filters.wkn_text.strip().lower(), na=False, regex=False)
 
     if filters.underlying_text.strip():
-        mask &= df["UnderlyingLower"].str.contains(
-            filters.underlying_text.strip().lower(),
-            na=False,
-            regex=False,
-        )
+        mask &= df["UnderlyingLower"].str.contains(filters.underlying_text.strip().lower(), na=False, regex=False)
 
     return df.loc[mask].sort_values(["Time", "Id"], ascending=[False, False], na_position="last")
 
@@ -46,10 +47,16 @@ def active_filter_summary(filters: Filters, total_rows: int, filtered_rows: int)
         parts.append("Category=" + ",".join(filters.category))
     if filters.side:
         parts.append("Side=" + ",".join(filters.side))
+    if filters.trader:
+        parts.append("Trader=" + ",".join(filters.trader))
+    if filters.interface:
+        parts.append("Interface=" + ",".join(filters.interface))
     if filters.wkn_text.strip():
         parts.append(f'WKN contains "{filters.wkn_text.strip()}"')
     if filters.underlying_text.strip():
         parts.append(f'Underlying contains "{filters.underlying_text.strip()}"')
+    if filters.next_event_only:
+        parts.append("Event<3d only")
     if filters.pairs_only_table:
         parts.append("Pairs only in table")
 

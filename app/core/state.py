@@ -12,15 +12,25 @@ class CursorState:
     last_time: Optional[datetime] = None
     seen_ids_at_last_time: Set[str] = field(default_factory=set)
 
+    # Production-friendly explicit cursor state.
+    last_successful_poll_time: Optional[datetime] = None
+    last_event_time: Optional[datetime] = None
+    last_sql_query_from: Optional[datetime] = None
+    last_sql_query_to: Optional[datetime] = None
+    status: str = "INIT"
+
 
 @dataclass
 class Filters:
     action: tuple[str, ...] = tuple()
     category: tuple[str, ...] = tuple()
     side: tuple[str, ...] = tuple()
+    trader: tuple[str, ...] = tuple()
+    interface: tuple[str, ...] = tuple()
     wkn_text: str = ""
     underlying_text: str = ""
     pairs_only_table: bool = False
+    next_event_only: bool = False
 
 
 @dataclass
@@ -56,13 +66,10 @@ class SanityCounters:
 
 @dataclass
 class LiveSessionState:
-    # Three stores:
-    # raw_df: all normalized rows currently held in memory.
-    # live_df: live-analysis dataframe. Currently same shape as raw_df but kept separate for future raw/full split.
-    # display_df: latest filtered/capped rows currently shown in the big table.
     raw_df: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     live_df: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     display_df: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
+    last_raw_poll_df: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
 
     cursor: CursorState = field(default_factory=CursorState)
     active_filters: Filters = field(default_factory=Filters)
@@ -78,6 +85,10 @@ class LiveSessionState:
     refresh_profile: RefreshProfile = field(default_factory=RefreshProfile)
     sanity: SanityCounters = field(default_factory=SanityCounters)
 
+    schema_report: dict = field(default_factory=dict)
+    column_availability: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
+
     dashboard_cache: dict = field(default_factory=dict)
     dashboard_last_refresh_at: Optional[datetime] = None
     dashboard_poll_counter: int = 0
+    dashboard_status: str = "INIT"

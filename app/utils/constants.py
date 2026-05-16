@@ -1,37 +1,36 @@
 """Application-wide constants."""
 
+from app import config
+
 APP_TITLE = "Turbo MM Live App"
-DEFAULT_POLL_MS = 10_000
-START_HOUR = 2
 
-# Right-side unfiltered dashboard is deliberately throttled.
-DASHBOARD_REFRESH_SECONDS = 30
-DASHBOARD_REFRESH_EVERY_N_POLLS = 3
+DEFAULT_POLL_MS = int(config.POLL_INTERVAL_SECONDS * 1000)
+START_HOUR = config.START_HOUR
+HISTORY_DAYS = config.HISTORY_DAYS
+SQL_PUFFER_SECONDS = config.SQL_PUFFER_SECONDS
 
-# Performance guardrail.
-SLOW_REFRESH_WARNING_MS = 250.0
+DASHBOARD_REFRESH_SECONDS = config.DASHBOARD_REFRESH_SECONDS
+DASHBOARD_REFRESH_EVERY_N_POLLS = config.DASHBOARD_REFRESH_EVERY_N_POLLS
+SLOW_REFRESH_WARNING_MS = config.SLOW_REFRESH_WARNING_MS
+LIVE_TABLE_MAX_ROWS = config.LIVE_TABLE_MAX_ROWS
+HIGH_NOTIONAL_ALERT = config.HIGH_NOTIONAL_ALERT
+STALE_WARNING_SECONDS = config.STALE_WARNING_SECONDS
+STALE_PANIC_SECONDS = config.STALE_PANIC_SECONDS
+MY_TRADER = config.MY_TRADER
 
-# Latest rows displayed in live table.
-LIVE_TABLE_MAX_ROWS = 500
-
-# Priority alert thresholds for fake/demo data.
-HIGH_NOTIONAL_ALERT = 25_000.0
+FINAL_SCHEMA_COLUMNS = [
+    "Id", "OptionType", "Time", "Interface", "Wkn", "Underlying",
+    "UnderlyingIsin", "UnderlyingNode", "Strike", "Expiry",
+    "Action", "DetailedAction", "Counterparty", "Side", "TradePrice",
+    "Quantity", "ContractSize", "Ref1", "Trader", "Agio",
+    "Category", "EquityDeltaEq", "IsNextEventIn3Days",
+]
 
 DETAIL_COLUMN_ORDER = [
-    "Id",
-    "Time",
-    "Wkn",
-    "Underlying",
-    "OptionType",
-    "Action",
-    "Counterparty",
-    "Side",
-    "TradePrice",
-    "Quantity",
-    "ContractSize",
-    "Category",
+    *FINAL_SCHEMA_COLUMNS,
     "TradeValue",
     "Information",
+    "HighlightReason",
 ]
 
 PLACEHOLDER_TABS = [

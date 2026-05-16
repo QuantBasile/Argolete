@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QLabel, QPushButton, QTextEdit, QGridLayout, QGroupBox, QVBoxLayout, QWidget
 
+from app.ui.widgets.dashboard_table import DashboardTable
+
 
 class DebugProfilingTab(QWidget):
     """Structured in-app debug/profiling console."""
@@ -10,10 +12,10 @@ class DebugProfilingTab(QWidget):
         super().__init__(parent)
 
         self.runtime_labels = self._make_labels([
-            "Mode", "Live tab active", "Poll interval", "Rows in memory", "Cursor time", "Dashboard refreshed",
+            "Mode", "Live tab active", "Poll interval", "Rows in memory", "Cursor time", "Dashboard refreshed", "Schema drift",
         ])
         self.poll_labels = self._make_labels([
-            "Status", "Last rows", "Poll ms", "Last event", "Lag seconds",
+            "Status", "Last rows", "Poll ms", "Last event", "Lag seconds", "Query from", "Query to",
         ])
         self.refresh_labels = self._make_labels([
             "Reason", "Filter ms", "Metrics ms", "Dashboard ms", "Table ms", "Total ms", "Slow warning",
@@ -21,6 +23,17 @@ class DebugProfilingTab(QWidget):
         self.sanity_labels = self._make_labels([
             "Duplicate IDs dropped", "Missing ID", "Missing Time", "Missing WKN", "Invalid TradeOK price", "Zero quantity",
         ])
+
+        self.raw_rows_table = DashboardTable(
+            "Last Raw Rows",
+            ["Time", "Wkn", "Underlying", "Action", "DetailedAction", "Side", "TradePrice", "Quantity"],
+            {"Time": "Time", "Wkn": "WKN", "Underlying": "Underlying", "Action": "Action", "DetailedAction": "Detailed", "Side": "Side", "TradePrice": "Price", "Quantity": "Qty"},
+        )
+        self.column_table = DashboardTable(
+            "Column Availability",
+            ["Column", "Present", "NullPct", "Dtype"],
+            {"Column": "Column", "Present": "Present", "NullPct": "Null %", "Dtype": "Dtype"},
+        )
 
         self.text = QTextEdit()
         self.text.setReadOnly(True)
@@ -32,6 +45,8 @@ class DebugProfilingTab(QWidget):
         layout.addWidget(self._group("Last poll quality", self.poll_labels))
         layout.addWidget(self._group("Last refresh timings", self.refresh_labels))
         layout.addWidget(self._group("Data sanity counters", self.sanity_labels))
+        layout.addWidget(self.raw_rows_table)
+        layout.addWidget(self.column_table)
         layout.addWidget(self.clear_button)
         layout.addWidget(self.text, 1)
 

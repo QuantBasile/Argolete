@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QTableView, QToolTip, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QSizePolicy, QTableView, QToolTip, QVBoxLayout
 
 
 class DashboardTableModel(QAbstractTableModel):
@@ -39,19 +39,24 @@ class DashboardTableModel(QAbstractTableModel):
         value = self._records[row].get(col, "")
         if value is None or pd.isna(value):
             return ""
-        if col in {"TradedVolume", "Volume", "TradeValue"}:
+        if col in {"TradedVolume", "Volume", "TradeValue", "NetDeltaEq", "KOValue", "CumKOValue"}:
             try:
                 return f"{float(value):,.0f}"
             except Exception:
                 return str(value)
-        if col in {"Trades", "Quotes", "Count"}:
+        if col in {"CumAgio", "Agio"}:
+            try:
+                return f"{float(value):,.4f}"
+            except Exception:
+                return str(value)
+        if col in {"Trades", "Quotes", "Count", "TraderTimeoutCount", "WknCount", "KOEvents"}:
             try:
                 return f"{int(value):,}"
             except Exception:
                 return str(value)
-        if col in {"TradeQuoteRatio"}:
+        if col in {"TradeQuoteRatio", "NullPct"}:
             try:
-                return f"{float(value):.3f}"
+                return f"{float(value):.2f}"
             except Exception:
                 return str(value)
         return str(value)
@@ -59,15 +64,15 @@ class DashboardTableModel(QAbstractTableModel):
     def data(self, index: QModelIndex, role=Qt.DisplayRole):
         if not index.isValid():
             return None
-
         col = self.columns[index.column()]
-
         if role == Qt.DisplayRole:
             return self.display_value(index.row(), index.column())
-
-        if role == Qt.TextAlignmentRole and col in {"TradedVolume", "Trades", "Quotes", "Count", "TradeQuoteRatio"}:
+        if role == Qt.TextAlignmentRole and col in {
+            "TradedVolume", "Trades", "Quotes", "Count", "TradeQuoteRatio",
+            "TraderTimeoutCount", "WknCount", "NetDeltaEq", "NullPct",
+            "CumAgio", "Agio", "KOValue", "CumKOValue", "KOEvents",
+        }:
             return Qt.AlignRight | Qt.AlignVCenter
-
         return None
 
     def headerData(self, section: int, orientation, role=Qt.DisplayRole):
@@ -80,10 +85,8 @@ class DashboardTableModel(QAbstractTableModel):
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder) -> None:
         if self._df.empty:
             return
-
         col = self.columns[column]
         ascending = order == Qt.AscendingOrder
-
         self.layoutAboutToBeChanged.emit()
         self._df = self._df.sort_values(col, ascending=ascending, kind="mergesort").reset_index(drop=True)
         self._records = self._df.to_dict("records")
@@ -91,17 +94,11 @@ class DashboardTableModel(QAbstractTableModel):
 
 
 class DashboardTable(QFrame):
-    def __init__(
-        self,
-        title: str,
-        columns: list[str],
-        headers: dict[str, str] | None = None,
-        parent=None,
-    ) -> None:
+    def __init__(self, title: str, columns: list[str], headers: dict[str, str] | None = None, parent=None) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.setObjectName("DashboardTable")
-        self.setMinimumHeight(235)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.title = QLabel(title)
         self.title.setObjectName("PanelTitle")
@@ -112,7 +109,7 @@ class DashboardTable(QFrame):
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
         self.table.setSortingEnabled(True)
-        self.table.setMinimumHeight(165)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.doubleClicked.connect(self._copy_cell)
 
         layout = QVBoxLayout(self)
@@ -124,14 +121,20 @@ class DashboardTable(QFrame):
     def set_data(self, df: pd.DataFrame) -> None:
         self.model_.set_frame(df)
         for i, col in enumerate(self.model_.columns):
-            if col in {"Underlying", "Counterparty", "Reason", "Metric"}:
-                self.table.setColumnWidth(i, 130)
+            if col in {"Underlying", "Counterparty", "Reason", "Metric", "Category", "Column"}:
+                self.table.setColumnWidth(i, 135)
+            elif col in {"Dtype"}:
+                self.table.setColumnWidth(i, 90)
             elif col == "Wkn":
                 self.table.setColumnWidth(i, 85)
-            elif col == "Time":
-                self.table.setColumnWidth(i, 75)
-            elif col == "TradedVolume":
+            elif col in {"Time", "KOTime"}:
+                self.table.setColumnWidth(i, 120)
+            elif col in {"TradedVolume", "KOValue", "CumKOValue"}:
                 self.table.setColumnWidth(i, 115)
+            elif col == "TraderTimeoutCount":
+                self.table.setColumnWidth(i, 125)
+            elif col == "Bucket":
+                self.table.setColumnWidth(i, 75)
             else:
                 self.table.setColumnWidth(i, 78)
 

@@ -19,14 +19,15 @@ class LiveTableModel(QAbstractTableModel):
         self.beginResetModel()
         if df is None or df.empty:
             self._df = pd.DataFrame(columns=LIVE_TABLE_COLUMNS)
+            self._records = []
         else:
-            cols = [c for c in LIVE_TABLE_COLUMNS if c in df.columns]
+            cols = list(dict.fromkeys([*LIVE_TABLE_COLUMNS, "Wkn", "HighlightReason", "PriorityScore", "DetailedAction", "Action", "IsNextEventIn3Days", "TradeValue"]))
+            cols = [c for c in cols if c in df.columns]
             self._df = df.loc[:, cols].copy()
             for col in LIVE_TABLE_COLUMNS:
                 if col not in self._df.columns:
                     self._df[col] = ""
-            self._df = self._df[LIVE_TABLE_COLUMNS]
-        self._records = self._df.to_dict("records") if not self._df.empty else []
+            self._records = self._df.to_dict("records")
         self._highlight_wkns = highlight_wkns or set()
         self.endResetModel()
 
@@ -52,6 +53,8 @@ class LiveTableModel(QAbstractTableModel):
                 return f"{float(value):.4f}"
             if fmt == "float":
                 return f"{float(value):.4f}"
+            if fmt == "bool":
+                return "Y" if bool(value) else ""
         except Exception:
             return str(value)
 
@@ -61,13 +64,31 @@ class LiveTableModel(QAbstractTableModel):
         if not index.isValid():
             return None
 
+        rec = self._records[index.row()]
+
         if role == Qt.DisplayRole:
             return self.display_value(index.row(), index.column())
 
         if role == Qt.BackgroundRole:
-            rec = self._records[index.row()]
-            if str(rec.get("Wkn", "")) in self._highlight_wkns:
+            reasons = str(rec.get("HighlightReason", ""))
+            action = str(rec.get("Action", ""))
+            detailed = str(rec.get("DetailedAction", ""))
+
+            if "Error" in reasons or action in {"TradeError", "QuoteError"}:
+                return QColor("#ffd6d6")
+            if "TraderTimeout" in reasons or detailed == "TraderTimeout":
+                return QColor("#ffe8cc")
+            if "SoldOut" in reasons or detailed == "SoldOut":
+                return QColor("#f3d9fa")
+            if "Pair" in reasons:
                 return QColor("#fff3bf")
+            if "Event<3d" in reasons:
+                return QColor("#d0ebff")
+            if "HighNotional" in reasons:
+                return QColor("#d3f9d8")
+
+        if role == Qt.ToolTipRole:
+            return str(rec.get("HighlightReason", ""))
 
         if role == Qt.TextAlignmentRole:
             col = LIVE_TABLE_COLUMNS[index.column()]
@@ -92,11 +113,7 @@ class LiveTableModel(QAbstractTableModel):
         ascending = order == Qt.AscendingOrder
 
         self.layoutAboutToBeChanged.emit()
-        self._df = self._df.sort_values(
-            col_name,
-            ascending=ascending,
-            kind="mergesort",
-        ).reset_index(drop=True)
+        self._df = self._df.sort_values(col_name, ascending=ascending, kind="mergesort").reset_index(drop=True)
         self._records = self._df.to_dict("records")
         self.layoutChanged.emit()
 
